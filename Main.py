@@ -8,8 +8,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.express as px
+from fastai.tabular.all import *
 import plotly.offline as po
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.linear_model import LinearRegression
 
 # read the file
 df = pd.read_csv('Input/BTC-USD.csv')
@@ -38,7 +40,7 @@ print(df.shape)
 
 def create_copy_dataframe_for_analysis(input_dataframe, column1, column2):
     data = input_dataframe.copy().sort_index(ascending=True, axis=0)
-    new_data = pd.DataFrame(index=range(0, len(df)), columns=[column1, column2])
+    new_data = pd.DataFrame(index=range(0, len(df)), columns=[column1, column2]).copy()
 
     for i in range(0, len(data)):
         new_data[column1][i] = data[column1][i]
@@ -47,12 +49,9 @@ def create_copy_dataframe_for_analysis(input_dataframe, column1, column2):
     return new_data
 
 
-new_data = create_copy_dataframe_for_analysis(df, 'Date', 'Close')
+new_df = create_copy_dataframe_for_analysis(df, 'Date', 'Close')
 
-new_data['Close'] = pd.to_numeric(new_data.Close)
-
-print(new_data.head())
-
+new_df['Close'] = pd.to_numeric(new_df.Close)
 
 # Create Training and Test Data from the new data frame
 
@@ -64,12 +63,12 @@ def training_and_test_datasets(input_data):
     valid = input_data.copy().loc[split - 1:]
     return train, valid, dataset
 
-train, valid, dataset = training_and_test_datasets(new_data)
+
+train, valid, dataset = training_and_test_datasets(new_df)
 
 # shapes of training set
 print('\n Shape of training set:')
 print(train.shape)
-
 
 # shapes of validation set
 print('\n Shape of validation set:')
@@ -98,9 +97,34 @@ print(rms)
 valid['Predictions'] = 0
 valid['Predictions'] = preds
 
-print(valid.info())
+fig1 = px.line(valid, x='Date', y=['Close', 'Predictions'], title='Bitcoin Prediction Price Change')
+fig1.show()
 
-fig = px.line(valid, x='Date', y=['Close', 'Predictions'], title='Bitcoin Prediction Price Change')
+new_df_2 = new_df.copy()
+add_datepart(new_df_2, 'Date')
+new_df_2.drop('Elapsed', axis=1, inplace=True)  # elapsed will be the time stamp
 
-fig.show()
+print(new_df_2.head())
+
+train_2, valid_2, dataset_2 = training_and_test_datasets(new_df_2)
+
+x_train_2 = train_2.drop('Close', axis=1)
+y_train_2 = train_2['Close']
+x_valid_2 = valid_2.drop('Close', axis=1)
+y_valid_2 = valid_2['Close']
+
+model = LinearRegression()
+model.fit(x_train_2, y_train_2)
+
+# make predictions and find the rmse
+preds_2 = model.predict(x_valid_2)
+rms = np.sqrt(np.mean(np.power((np.array(y_valid_2) - np.array(preds_2)), 2)))
+print(rms)
+
+valid_2['Predictions'] = 0
+valid_2['Predictions'] = preds_2
+valid_2['Year'] = pd.to_datetime(valid_2.Year, format='%Y')
+
+fig2 = px.line(valid_2, x='Year', y=['Close', 'Predictions'], title='Bitcoin Prediction Price Change')
+fig2.show()
 
