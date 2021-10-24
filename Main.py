@@ -1,181 +1,159 @@
-# Main Execution File
-# Author : Barry Quinlan
-# Date : 22nd October 2021
-# Email : bappyquinlan@gmail.com
-
-# import Required Packages
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import plotly.express as px
-from fastai.tabular.all import *
-import plotly.offline as po
+
+from sklearn.model_selection import TimeSeriesSplit, train_test_split
+import sklearn.metrics as metrics
+from sklearn.metrics import make_scorer, accuracy_score
+from sklearn.neighbors import KNeighborsRegressor, KNeighborsClassifier
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
 from sklearn.preprocessing import MinMaxScaler
-from sklearn import neighbors
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, cross_val_score
+from sklearn.neural_network import MLPRegressor
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error
+import plotly.express as px
+from xgboost import XGBClassifier
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping , ReduceLROnPlateau
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.layers import Dense, Dropout, LSTM
+from sklearn.metrics import mean_absolute_error
 
 scaler = MinMaxScaler(feature_range=(0, 1))
 
-# read the file
+
+def regression_results(y_true, y_pred):
+    # Regression metrics
+    explained_variance = metrics.explained_variance_score(y_true, y_pred)
+    mean_absolute_error = metrics.mean_absolute_error(y_true, y_pred)
+    mse = metrics.mean_squared_error(y_true, y_pred)
+    mean_squared_log_error = metrics.mean_squared_log_error(y_true, y_pred)
+    median_absolute_error = metrics.median_absolute_error(y_true, y_pred)
+    r2 = metrics.r2_score(y_true, y_pred)
+    print('explained_variance: ', round(explained_variance, 4))
+    print('mean_squared_log_error: ', round(mean_squared_log_error, 4))
+    print('r2: ', round(r2, 4))
+    print('MAE: ', round(mean_absolute_error, 4))
+    print('MSE: ', round(mse, 4))
+    print('RMSE: ', round(np.sqrt(mse), 4))
+
+
+def training_data_split(input_dataframe, split_point, column_name):
+    split_point1 = str(split_point)
+    split_point2 = str(split_point + 1)
+    X_train1 = input_dataframe.loc[:split_point1].drop([column_name], axis=1)
+    y_train1 = input_dataframe.loc[:split_point1, column_name]
+    X_test1 = input_dataframe.loc[split_point2].drop([column_name], axis=1)
+    y_test1 = input_dataframe.loc[split_point2, column_name]
+    return X_train1, y_train1, X_test1, y_test1
+
+def working_dataframe(input_dataframe, new_column, column_to_copy):
+    # creating new dataframe from closing price column
+    df_closed = input_dataframe[[column_to_copy]].copy()
+    # inserting new column with yesterday's closed values
+    df_closed[new_column+'_Close'] = df_closed.loc[:, column_to_copy].shift()
+    # inserting another column with difference between yesterday and day before yesterday's consumption values.
+    df_closed.loc[:, new_column+'_Diff'] = df_closed.loc[:, new_column+'_Close'].diff()
+    # dropping NAs
+    df_closed = df_closed.dropna()
+    return df_closed
+
+def rmse(actual, predict):
+    predict = np.array(predict)
+    actual = np.array(actual)
+    distance = predict - actual
+    square_distance = distance ** 2
+    mean_square_distance = square_distance.mean()
+    score = np.sqrt(mean_square_distance)
+    return score
+
+
+rmse_score = make_scorer(rmse, greater_is_better=False)
+
 df = pd.read_csv('Input/BTC-USD.csv')
-
-# print the head
-print(df.head())
-
-# setting index as date
 df['Date'] = pd.to_datetime(df.Date, format='%Y-%m-%d')
 df.index = df['Date']
 
-print(df.isnull().sum())
-df = df.dropna()
-print(df.isnull().sum())
+df_closed = working_dataframe(df, 'Yesterday', 'Close')
 
-fig = px.line(df, x='Date', y='Close', title='Bitcoin Market Price Change')
-fig.show()
+X_train, y_train, X_test, y_test = training_data_split(df_closed, 2019, 'Close')
 
-# looking at the first five rows of the data
-print(df.head())
-print('\n Shape of the data:')
-print(df.shape)
+models = []
+models.append(('LR', LinearRegression()))
+models.append(('NN', MLPRegressor(solver='lbfgs', max_iter=1000)))  # neural network
+models.append(('KNN', KNeighborsRegressor()))
+models.append(('RF', RandomForestRegressor(n_estimators=10)))  # Ensemble method - collection of many decision trees
+models.append(('SVR', SVR(gamma='auto')))  # kernel = linear
+# Evaluate each model in turn
+results = []
+names = []
+for name, model in models:
+    # TimeSeries Cross validation
+    tscv = TimeSeriesSplit(n_splits=10)
 
+    cv_results = cross_val_score(model, X_train.values, y_train.values, cv=tscv, scoring='r2')
+    results.append(cv_results)
+    names.append(name)
+    print('%s: %f (%f)' % (name, cv_results.mean(), cv_results.std()))
 
-# Creating the required dataframe with date and our target output
+# Compare Algorithms
+plt.boxplot(results, labels=names)
+plt.title('Algorithm Comparison')
+plt.show()
 
-def create_copy_dataframe_for_analysis(input_dataframe, column1, column2):
-    data = input_dataframe.copy().sort_index(ascending=True, axis=0)
-    new_data = pd.DataFrame(index=range(0, len(df)), columns=[column1, column2]).copy()
+#model = RandomForestRegressor()
+model = KNeighborsRegressor()
 
-    for i in range(0, len(data)):
-        new_data[column1][i] = data[column1][i]
-        new_data[column2][i] = data[column2][i]
-
-    return new_data
-
-
-new_df = create_copy_dataframe_for_analysis(df, 'Date', 'Close')
-
-new_df['Close'] = pd.to_numeric(new_df.Close)
-
-
-# Create Training and Test Data from the new data frame
-
-# creating train and test sets
-def training_and_test_datasets(input_data):
-    dataset = input_data.values
-    split = round(len(dataset) / 2)
-    train = input_data.copy().loc[:split]
-    valid = input_data.copy().loc[split - 1:]
-    return train, valid, dataset
-
-
-train, valid, dataset = training_and_test_datasets(new_df)
-
-# shapes of training set
-print('\n Shape of training set:')
-print(train.shape)
-
-# shapes of validation set
-print('\n Shape of validation set:')
-print(valid.shape)
-
-# shape of dataset set
-print('\n Shape of dataset set:')
-print(dataset.shape)
-
-# In the next step, we will create predictions for the validation sets and check the RMSE using the actual values.
-# making predictions
-preds = []
-
-for i in range(0, valid.shape[0]):
-    a = train['Close'][len(train) - 248 + i:].sum() + sum(preds)
-    b = a / 248
-    preds.append(b)
-
-print(preds)
-
-# checking the results (RMSE value)
-rms = np.sqrt(np.mean(np.power((np.array(valid['Close']) - preds), 2)))
-print('\n RMSE value on validation set:')
-print(rms)
-
-valid['Predictions'] = 0
-valid['Predictions'] = preds
-
-fig1 = px.line(valid, x='Date', y=['Close', 'Predictions'], title='Bitcoin Prediction Price Change')
-#fig1.show()
-
-
-# 2nd Model
-
-new_df_2 = new_df.copy()
-add_datepart(new_df_2, 'Date')
-new_df_2.drop('Elapsed', axis=1, inplace=True)  # elapsed will be the time stamp
-
-train_2, valid_2, dataset_2 = training_and_test_datasets(new_df_2)
-
-x_train_2 = train_2.drop('Close', axis=1)
-y_train_2 = train_2['Close']
-x_valid_2 = valid_2.drop('Close', axis=1)
-y_valid_2 = valid_2['Close']
-
-model = LinearRegression()
-model.fit(x_train_2, y_train_2)
-
-# make predictions and find the rmse
-preds_2 = model.predict(x_valid_2)
-rms = np.sqrt(np.mean(np.power((np.array(y_valid_2) - np.array(preds_2)), 2)))
-print(rms)
-
-# scaling data
-x_train_scaled = scaler.fit_transform(x_train_2)
-x_train_3 = pd.DataFrame(x_train_scaled)
-y_train_3 = y_train_2.copy()
-x_valid_scaled = scaler.fit_transform(x_valid_2)
-x_valid_3 = pd.DataFrame(x_valid_scaled)
-y_valid_3 = y_valid_2.copy()
-
-valid_2['Predictions'] = 0
-valid_2['Predictions'] = preds_2
-valid_2['Year'] = pd.to_datetime(valid_2.Year, format='%Y')
-
-fig2 = px.line(valid_2, x='Year', y=['Close', 'Predictions'], title='Bitcoin Prediction Price Change')
-#fig2.show()
-
-# 3rd Model
-# using gridsearch to find the best parameter
+# Define our candidate hyperparameters
 params = {'n_neighbors': [2, 3, 4, 5, 6, 7, 8, 9]}
-knn = neighbors.KNeighborsRegressor()
-model = GridSearchCV(knn, params, cv=5)
+tscv = TimeSeriesSplit(n_splits=10)
+#gsearch = GridSearchCV(estimator=model, cv=tscv, param_grid=param_search, scoring=rmse_score)
+gsearch = GridSearchCV(model, cv=tscv, param_grid=params, scoring=rmse_score)
+gsearch.fit(X_train.values, y_train.values)
+best_score = gsearch.best_score_
+best_model = gsearch.best_estimator_
 
-# fit the model and make predictions
-model.fit(x_train_3, y_train_3)
-preds_3 = model.predict(x_valid_3)
 
-# rmse
-rms = np.sqrt(np.mean(np.power((np.array(y_valid_3) - np.array(preds_3)), 2)))
-print(rms)
+y_true = y_test.values
+y_pred = best_model.predict(X_test.values)
+regression_results(y_true, y_pred)
 
-x_valid_3['Predictions'] = 0
-x_valid_3['Predictions'] = preds_3
+df_closed_2o = working_dataframe(df_closed, 'Yesterday-1', 'Close')
 
-fig3 = px.line(x_valid_3, y='Predictions', title='Bitcoin Prediction Price Change')
-fig3.show()
+X_train_2o, y_train_2o, X_test, y_test = training_data_split(df_closed_2o, 2019, 'Close')
 
-# 4th Model
-#creating train and test sets
+model = RandomForestRegressor()
+param_search = {
+    'n_estimators': [20, 50, 100],
+    'max_features': ['auto', 'sqrt', 'log2'],
+    'max_depth': [i for i in range(5, 15)]
+}
+tscv = TimeSeriesSplit(n_splits=10)
+gsearch = GridSearchCV(estimator=model, cv=tscv, param_grid=param_search, scoring=rmse_score)
+gsearch.fit(X_train_2o, y_train_2o)
+best_score = gsearch.best_score_
+best_model = gsearch.best_estimator_
+y_true = y_test.values
+y_pred = best_model.predict(X_test)
+regression_results(y_true, y_pred)
+
+
+X_train_2, y_train_2, X_test_2, y_test_2 = training_data_split(df_closed, 2019, 'Close')
+
+model2 = XGBClassifier()
+model2.fit(X_train_2, y_train_2)
+
+y_pred2 = model2.predict(X_test_2.values)
+predictions2 = [round(value) for value in y_pred2]
+
+df_deep_learning = working_dataframe(df_closed, 'Yesterday', 'Close')
 
 # Create a new dataframe with only the 'Close column
+scaler = MinMaxScaler(feature_range=(0, 1))
 
-#df2 = pd.read_csv('Input/BTC-USD.csv')
-data2 = df.filter(['Close']).copy()
 # Convert the dataframe to a numpy array
-dataset_4 = data2.values
-print(data2)
+dataset_4 = df_deep_learning.filter(['Close']).copy().values
+
 # Get the number of rows to train the model on
 training_data_len = int(np.ceil( len(dataset_4) * .95 ))
 
@@ -187,10 +165,10 @@ train_data = scaled_data[0:int(training_data_len), :]
 x_train = []
 y_train = []
 
-for i in range(360, len(train_data)):
-    x_train.append(train_data[i - 360:i, 0])
+for i in range(60, len(train_data)):
+    x_train.append(train_data[i - 60:i, 0])
     y_train.append(train_data[i, 0])
-    if i <= 361:
+    if i <= 61:
         print(x_train)
         print(y_train)
         print()
@@ -216,7 +194,7 @@ callbacks = [EarlyStopping(patience=4, monitor='loss', mode='min'),
              ReduceLROnPlateau(patience=2, verbose=1)]
 
 history =model.fit(x_train, y_train,
-                        epochs=20,
+                        epochs=30,
                         batch_size=5,
                         callbacks=callbacks,
                         validation_data=(x_train, y_train)
@@ -224,12 +202,12 @@ history =model.fit(x_train, y_train,
 
 # Create the testing data set
 # Create a new array containing scaled values from index 1543 to 2002
-test_data = scaled_data[training_data_len - 360:, :]
+test_data = scaled_data[training_data_len - 60:, :]
 # Create the data sets x_test and y_test
 x_test = []
 y_test = dataset_4[training_data_len:, :]
-for i in range(360, len(test_data)):
-    x_test.append(test_data[i - 360:i, 0])
+for i in range(60, len(test_data)):
+    x_test.append(test_data[i - 60:i, 0])
 
 # Convert the data to a numpy array
 x_test = np.array(x_test)
@@ -239,6 +217,7 @@ x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
 # Get the models predicted price values
 predictions = model.predict(x_test)
+predictions = scaler.inverse_transform(y_pred)
 predictions = scaler.inverse_transform(predictions)
 
 # Get the root mean squared error (RMSE)
@@ -247,9 +226,10 @@ print(rmse)
 
 print(mean_absolute_error(y_test, predictions))
 
-train4 = data2[:training_data_len]
-valid4 = data2[training_data_len:].copy()
+train4 = df_deep_learning[:training_data_len]
+valid4 = df_deep_learning[training_data_len:].copy()
 valid4['Predictions'] = predictions
 
-fig4 = px.line(valid4, y=['Close','Predictions'], title='Bitcoin Prediction Price Change')
-fig4.show()
+fig = px.line(valid4, y=['Close','Predictions'], title='Bitcoin Prediction Price Change')
+fig.show()
+
