@@ -157,7 +157,6 @@ dataset_4 = df_deep_learning.filter(['Close']).copy().values
 # Get the number of rows to train the model on
 training_data_len = int(np.ceil( len(dataset_4) * .95 ))
 
-scaler = MinMaxScaler(feature_range=(0, 1))
 scaled_data = scaler.fit_transform(dataset_4)
 
 train_data = scaled_data[0:int(training_data_len), :]
@@ -189,7 +188,6 @@ model.add(Dense(1))
 model.compile(optimizer='adam', loss='mean_squared_error')
 
 
-
 callbacks = [EarlyStopping(patience=4, monitor='loss', mode='min'),
              ReduceLROnPlateau(patience=2, verbose=1)]
 
@@ -217,7 +215,6 @@ x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
 # Get the models predicted price values
 predictions = model.predict(x_test)
-predictions = scaler.inverse_transform(y_pred)
 predictions = scaler.inverse_transform(predictions)
 
 # Get the root mean squared error (RMSE)
