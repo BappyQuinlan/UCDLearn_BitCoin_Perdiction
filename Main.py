@@ -231,10 +231,13 @@ predictions = model.predict(x_test)
 predictions = scaler.inverse_transform(predictions)
 
 # Get the root mean squared error (RMSE)
-rmse = np.sqrt(np.mean(((predictions - y_test) ** 2)))
-print(rmse)
-
-print(mean_absolute_error(y_test, predictions))
+y_true = y_test
+y_pred = predictions
+regression_results(y_true, y_pred)
+# rmse = np.sqrt(np.mean(((predictions - y_test) ** 2)))
+# print(rmse)
+#
+# print(mean_absolute_error(y_test, predictions))
 
 train4 = df_deep_learning[:training_data_len]
 valid4 = df_deep_learning[training_data_len:].copy()
