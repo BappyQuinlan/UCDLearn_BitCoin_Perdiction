@@ -121,16 +121,17 @@ best_model = gsearch.best_estimator_
 
 y_true = y_test.values
 y_pred = best_model.predict(X_test.values)
+print('KNeighbours Regression')
 regression_results(y_true, y_pred)
 
 valid = X_test
 valid['Predictions'] = best_model.predict(X_test)
 
-fig = px.line(valid, y=['Yesterday_Close' ,'Predictions'], title='Bitcoin Prediction Price Change Model')
+fig = px.line(valid, y=['Yesterday_Close' ,'Predictions'], title='Bitcoin Prediction Price Change KNeighbours Model ')
 fig.show()
 
 
-df_closed_2o = working_dataframe(df_closed, 'Yesterday-1', 'Close')
+df_closed_2o = working_dataframe(df, 'Yesterday', 'Close')
 
 X_train_2o, y_train_2o, X_test, y_test = training_data_split(df_closed_2o, 2019, 'Close')
 
@@ -147,15 +148,16 @@ best_score = gsearch.best_score_
 best_model = gsearch.best_estimator_
 y_true = y_test.values
 y_pred = best_model.predict(X_test)
+print('Random Forest Regressor')
 regression_results(y_true, y_pred)
 
 valid = X_test
 valid['Predictions'] = best_model.predict(X_test)
 
-fig = px.line(valid, y=['Yesterday-1_Close' ,'Predictions'], title='Bitcoin Prediction Price Change Model')
+fig = px.line(valid, y=['Yesterday_Close' ,'Predictions'], title='Bitcoin Prediction Price Change Random Forest Model')
 fig.show()
 
-X_train_2, y_train_2, X_test_2, y_test_2 = training_data_split(df_closed, 2019, 'Close')
+X_train_2, y_train_2, X_test_2, y_test_2 = training_data_split(df_closed_2o, 2019, 'Close')
 
 model2 = XGBClassifier()
 model2.fit(X_train_2, y_train_2)
@@ -163,7 +165,7 @@ model2.fit(X_train_2, y_train_2)
 y_pred2 = model2.predict(X_test_2.values)
 predictions2 = [round(value) for value in y_pred2]
 
-df_deep_learning = working_dataframe(df_closed, 'Yesterday', 'Close')
+df_deep_learning = working_dataframe(df, 'Yesterday', 'Close')
 
 # Create a new dataframe with only the 'Close column
 scaler = MinMaxScaler(feature_range=(0, 1))
@@ -233,11 +235,8 @@ predictions = scaler.inverse_transform(predictions)
 # Get the root mean squared error (RMSE)
 y_true = y_test
 y_pred = predictions
+print('Keras Model')
 regression_results(y_true, y_pred)
-# rmse = np.sqrt(np.mean(((predictions - y_test) ** 2)))
-# print(rmse)
-#
-# print(mean_absolute_error(y_test, predictions))
 
 train4 = df_deep_learning[:training_data_len]
 valid4 = df_deep_learning[training_data_len:].copy()
