@@ -1,11 +1,19 @@
+# Main Execution File
+# Author : Barry Quinlan
+# Date : 25th October 2021
+# Email : bappyquinlan@gmail.com
+
+# Import required library's for the program
+# Install Pandas, numpy, matplotlib, sklearn, plotly, xgboost and tensorflow for keras
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import TimeSeriesSplit, train_test_split
+from sklearn.model_selection import TimeSeriesSplit
 import sklearn.metrics as metrics
-from sklearn.metrics import make_scorer, accuracy_score
-from sklearn.neighbors import KNeighborsRegressor, KNeighborsClassifier
+from sklearn.metrics import make_scorer
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
 from sklearn.preprocessing import MinMaxScaler
@@ -15,14 +23,12 @@ from sklearn.linear_model import LinearRegression
 import plotly.express as px
 from xgboost import XGBClassifier
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.layers import Dense, Dropout, LSTM
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.layers import Dense,LSTM
 from sklearn.metrics import mean_absolute_error
 
-scaler = MinMaxScaler(feature_range=(0, 1))
-
-
 def regression_results(y_true, y_pred):
+    # Calculate regression metrics for the predictions on different models
     # Regression metrics
     explained_variance = metrics.explained_variance_score(y_true, y_pred)
     mean_absolute_error = metrics.mean_absolute_error(y_true, y_pred)
@@ -32,6 +38,7 @@ def regression_results(y_true, y_pred):
     r2 = metrics.r2_score(y_true, y_pred)
     print('explained_variance: ', round(explained_variance, 4))
     print('mean_squared_log_error: ', round(mean_squared_log_error, 4))
+    print('median_absolute_error: ', round(median_absolute_error, 4))
     print('r2: ', round(r2, 4))
     print('MAE: ', round(mean_absolute_error, 4))
     print('MSE: ', round(mse, 4))
@@ -39,6 +46,7 @@ def regression_results(y_true, y_pred):
 
 
 def training_data_split(input_dataframe, split_point, column_name):
+    #Create the require training split testing split based on timeseries data
     split_point1 = str(split_point)
     split_point2 = str(split_point + 1)
     X_train1 = input_dataframe.loc[:split_point1].drop([column_name], axis=1)
@@ -81,7 +89,7 @@ X_train, y_train, X_test, y_test = training_data_split(df_closed, 2019, 'Close')
 models = []
 models.append(('LR', LinearRegression()))
 models.append(('NN', MLPRegressor(solver='lbfgs', max_iter=1000)))  # neural network
-models.append(('KNN', KNeighborsRegressor()))
+models.append(('KNN', KNeighborsRegressor(n_neighbors=3)))
 models.append(('RF', RandomForestRegressor(n_estimators=10)))  # Ensemble method - collection of many decision trees
 models.append(('SVR', SVR(gamma='auto')))  # kernel = linear
 # Evaluate each model in turn
@@ -101,22 +109,26 @@ plt.boxplot(results, labels=names)
 plt.title('Algorithm Comparison')
 plt.show()
 
-#model = RandomForestRegressor()
 model = KNeighborsRegressor()
 
 # Define our candidate hyperparameters
 params = {'n_neighbors': [2, 3, 4, 5, 6, 7, 8, 9]}
 tscv = TimeSeriesSplit(n_splits=10)
-#gsearch = GridSearchCV(estimator=model, cv=tscv, param_grid=param_search, scoring=rmse_score)
 gsearch = GridSearchCV(model, cv=tscv, param_grid=params, scoring=rmse_score)
 gsearch.fit(X_train.values, y_train.values)
 best_score = gsearch.best_score_
 best_model = gsearch.best_estimator_
 
-
 y_true = y_test.values
 y_pred = best_model.predict(X_test.values)
 regression_results(y_true, y_pred)
+
+valid = X_test
+valid['Predictions'] = best_model.predict(X_test)
+
+fig = px.line(valid, y=['Yesterday_Close' ,'Predictions'], title='Bitcoin Prediction Price Change Model')
+fig.show()
+
 
 df_closed_2o = working_dataframe(df_closed, 'Yesterday-1', 'Close')
 
@@ -137,6 +149,11 @@ y_true = y_test.values
 y_pred = best_model.predict(X_test)
 regression_results(y_true, y_pred)
 
+valid = X_test
+valid['Predictions'] = best_model.predict(X_test)
+
+fig = px.line(valid, y=['Yesterday-1_Close' ,'Predictions'], title='Bitcoin Prediction Price Change Model')
+fig.show()
 
 X_train_2, y_train_2, X_test_2, y_test_2 = training_data_split(df_closed, 2019, 'Close')
 
@@ -167,10 +184,6 @@ y_train = []
 for i in range(60, len(train_data)):
     x_train.append(train_data[i - 60:i, 0])
     y_train.append(train_data[i, 0])
-    if i <= 61:
-        print(x_train)
-        print(y_train)
-        print()
 
 # Convert the x_train and y_train to numpy arrays
 x_train, y_train = np.array(x_train), np.array(y_train)
@@ -192,8 +205,8 @@ callbacks = [EarlyStopping(patience=4, monitor='loss', mode='min'),
              ReduceLROnPlateau(patience=2, verbose=1)]
 
 history =model.fit(x_train, y_train,
-                        epochs=30,
-                        batch_size=5,
+                        epochs=20,
+                        batch_size=10,
                         callbacks=callbacks,
                         validation_data=(x_train, y_train)
                         )
@@ -227,6 +240,6 @@ train4 = df_deep_learning[:training_data_len]
 valid4 = df_deep_learning[training_data_len:].copy()
 valid4['Predictions'] = predictions
 
-fig = px.line(valid4, y=['Close','Predictions'], title='Bitcoin Prediction Price Change')
+fig = px.line(valid4, y=['Close','Predictions'], title='Bitcoin Prediction Price Change Keras Model')
 fig.show()
 
